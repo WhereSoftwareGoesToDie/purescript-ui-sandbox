@@ -1,4 +1,4 @@
-# Sandbox metadata application
+# Purescript UI sandbox
 
 You can use this to log in and log out, authenticating against a "remote" API
 
