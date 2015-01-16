@@ -96,7 +96,7 @@ main = do
         logStdoutDev $
         cors myCors $
         handleOptions $
-        serve fleetMetaAPI server
+        serve metaAPI server
 
 -- | My CORS policy
 myCors :: Request -> Maybe CorsResourcePolicy
