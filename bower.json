@@ -25,7 +25,8 @@
     "purescript-react": "~0.0.5",
     "purescript-thermite": "~0.5.0",
     "purescript-jquery-ajax": "~0.0.2",
-    "purescript-foreign": "~0.3.0",
-    "purescript-options": "git@github.com:ethul/purescript-options.git"
+    "purescript-json": "~0.4.7",
+    "purescript-options": "git@github.com:ethul/purescript-options.git",
+    "purescript-debug-foreign": "~0.0.3"
   }
 }

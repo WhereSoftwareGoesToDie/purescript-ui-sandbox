@@ -2,3 +2,6 @@
 cabal.sandbox.config
 build/*
 bower_components/*
+server/.cabal-sandbox/*
+server/cabal.sandbox.config
+server/dist

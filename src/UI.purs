@@ -3,14 +3,14 @@ module UI where
 import Control.Monad.Eff
 import Data.Either
 
-import Debug.Trace
-import Data.Foreign
-import Data.Foreign.Class
+import Data.JSON
 import Data.Function
+import Data.Map
 import Data.Maybe
 import Data.Traversable
 import Data.Tuple
-import Network.Ajax
+
+import Control.Monad.Eff.AJAX
 
 import Control.Monad.Error
 import Control.Monad.Error.Trans
@@ -18,8 +18,7 @@ import Control.Monad.Error.Class
 import Control.Monad.Cont.Trans
 import Control.Monad.Trans
 
-import Data.JSON (ToJSON, object, (.=), encode)
-import Data.Options (Options(), (:=))
+import Data.JSON
 
 import qualified Network.Oboe as O
 
@@ -32,9 +31,10 @@ import qualified Thermite.Events as T
 import qualified Thermite.Types as T
 
 import Debug.Trace
+import Debug.Foreign
 
 -- | Depicts all the actions taking place in our app.
-data Action = LogIn AuthResult | LogOut
+data Action = TryAuthenticate String String | LogOut
 
 -- | Stores app state.
 type State = {
@@ -48,6 +48,13 @@ data AuthPack = AuthPack {
     password :: String
 }
 
+-- | Marshalls AuthPack to JSON
+instance authPackToJSON :: ToJSON AuthPack where
+    toJSON (AuthPack ap) =
+        object [ "username" .= ap.username
+               , "password" .= ap.password ]
+
+--------------------------------------------------------------------------------
 -- | Determines whether login attempt was successful or not.
 data AuthResult = Authenticated {
                     identity :: String,
@@ -55,20 +62,23 @@ data AuthResult = Authenticated {
                     expiry   :: String }
                 | Unauthenticated
 
-instance authPackToJson :: ToJSON AuthPack where
-    toJSON p = object [ "username" .= p.username
-                      , "password" .= p.password ]
+-- | Shows AuthResult
+instance showAuthResult :: Show AuthResult where
+    show (Authenticated a) = "Authenticated " ++ a.identity ++ ", " ++ a.token ++ ", " ++ a.expiry
+    show Unauthenticated   = "Unauthenticated"
 
-instance foreignAuthResult :: IsForeign AuthResult where
-  read value = do
-    success <- readProp "success" value
-    case success of
-        "true" -> do
-            identity <- readProp "identity" value
-            token    <- readProp "token" value
-            expiry   <- readProp "expiry" value
-            return $ Authenticated {identity: identity, token: token, expiry: expiry}
-        _ -> return Unauthenticated
+-- | Marshalls AuthResult from JSON
+instance authResultFromJson :: FromJSON AuthResult where
+    parseJSON (JObject o) = do
+        success <- o .: "success"
+        case success of
+            true -> do
+                identity <- o .: "identity"
+                token    <- o .: "token"
+                expiry   <- o .: "expiry"
+                return $ Authenticated {identity: identity, token: token, expiry: expiry}
+            _ -> return $ Unauthenticated
+    parseJSON _ = fail "AuthResult parse failed."
 
 --------------------------------------------------------------------------------
 -- | Initial app state: logged out with no data.
@@ -99,11 +109,13 @@ render ctx s _ = T.div [ A.className "app-container" ] [ current ]
                 then loggedIn
                 else loggedOut
     loggedOut = T.div' [ loginForm ]
-    loggedIn = T.p' [ T.text "You're logged in!"
+    loggedIn = T.p' [ T.text $ show s.authToken
+                    , T.text "You're logged in!"
                     , T.button [ T.onClick ctx (\_ -> LogOut) ]
                                [ T.text "Log Out" ] ]
-    loginForm = T.div'
-                  [ fieldGroup [
+    loginForm = T.div' [
+                  T.p' [ T.text $ show s.authToken ]
+                  , fieldGroup [
                         T.label [] [ T.text "Email Address" ]
                       , T.input [ A._type "text"
                                 , A.name "email_address"
@@ -121,7 +133,7 @@ render ctx s _ = T.div [ A.className "app-container" ] [ current ]
                     ]
                   , fieldGroup [
                         T.button [ A._type "submit"
-                                 , T.onSubmit ctx handleSubmit ]
+                                 , T.onClick ctx handleSubmit ]
                                  [ T.text "Log In" ]
                   ] ]
     fieldGroup children = T.div [ A.className "form-group" ] children
@@ -129,43 +141,35 @@ render ctx s _ = T.div [ A.className "app-container" ] [ current ]
 handleSubmit :: T.MouseEvent -> Action
 handleSubmit _ =
     case Tuple eav pwv of
-        (Tuple (Just u) (Just p)) ->
-            lift $ tryLoginAjax u p >>=
-            handleSubmitResult
+        (Tuple (Just u) (Just p)) -> TryAuthenticate u p
         _ -> LogOut
   where
     eav = getSelectorValue "#email-address"
     pwv = getSelectorValue "#password"
-    tryLoginAjax u p = ajax "http://localhost:8080/auth" $ HttpRequest {
-        accepts: Json,
-        contentType: JsonContent,
-        method: POST,
-        contents: (Just $ encode $ AuthPack {username: u, password: p})
-    }
-
-handleSubmitResult :: Either _ String -> Action
-handleSubmitResult (Right text) =
-    case (readJSON text :: F AuthResult) of
-        Right a -> LogIn a
-        Left e  -> LogOut
-handleSubmitResult (Left e) = LogOut
 
 --------------------------------------------------------------------------------
 -- | Modifies the global app state based on the action taking place
 performAction :: T.PerformAction _ Action (T.Action _ State) 
-performAction _ (LogIn (Authenticated a)) = T.modifyState (\o ->
-    { authToken: Just a.token :: Maybe String })
-performAction _ (LogIn Unauthenticated) = T.modifyState (\o ->
-    { authToken: Nothing :: Maybe String })
-performAction _ LogOut      = T.modifyState (\o ->
-    { authToken: Nothing :: Maybe String })
+performAction _ (TryAuthenticate u p) = auth $
+    (AuthPack {username: u, password: p})
+performAction _ LogOut      = T.setState { authToken: Nothing :: Maybe String }
+
+auth :: AuthPack -> T.Action _ State Unit
+auth ap = do
+    let headers = [ Tuple "Content-Type" "application/json;charset=UTF-8"
+                  , Tuple "Accept" "application/json" ]
+    json <- T.async $ post "http://localhost:8080/auth" (encode ap) headers
+    let y = fprintUnsafe $ show (decode json :: Maybe AuthResult)
+    case (decode json :: Maybe AuthResult) of
+        Just (Authenticated a) -> T.setState $
+            { authToken: Just a.token :: Maybe String }
+        _                      -> T.setState $
+            { authToken: Nothing :: Maybe String }
 
 --------------------------------------------------------------------------------
 spec :: T.Spec _ State _ Action
-spec = T.Spec { initialState: initialState
-              , performAction: performAction
-              , render: render
-              }
+spec = T.simpleSpec initialState performAction render
+         # T.componentWillMount LogOut
 
 main = do
     let component = T.createClass spec

@@ -2,6 +2,7 @@ SHELL := /bin/bash --init-file ./make-scripts/makefile-functions.sh
 
 sources    = $(wildcard src/*.purs)
 objects    = $(patsubst src/%.purs, build/scripts/%.js, $(sources))
+lib        = $(shell find lib -type f \( -name '*.purs' \))
 components = $(shell find bower_components -type f \( -name '*.purs' -and \! -path '*example*' \))
 react      = $(shell find bower_components -type f \( -name 'react.min.js' \))
 
@@ -20,7 +21,7 @@ bower_components:
 build:
 	cp -r static build
 
-build/scripts: build bower_components
+build/scripts: build bower_components lib
 	@mkdir -p build/scripts
 
 build/lib: build bower_components
@@ -31,7 +32,7 @@ build/lib/react.js: build/lib
 
 build/scripts/%.js: module = $(notdir $(basename $<))
 build/scripts/%.js: src/%.purs build/scripts
-	@psc --module=$(module) --main=$(module) --output=$@ $(components) $<
+	@psc --module=$(module) --main=$(module) --output=$@ $(components) $(lib) $<
 
 run: all
 	@cd build && python -m SimpleHTTPServer
