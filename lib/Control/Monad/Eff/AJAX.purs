@@ -29,6 +29,34 @@ foreign import get
       -> (String -> Eff (xhr :: XHR | eff) Unit) -- ^ Callback method to run
       -> Eff (xhr :: XHR | eff) Unit
 
+-- | Send a HTTP GET
+foreign import getWithHeaders
+  """
+  function getWithHeaders(uri) {
+    return function(headers) {
+      return function(k) {
+        return function() {
+          var req = new XMLHttpRequest();
+          req.onreadystatechange = function() {
+            if (req.readyState === 4 && req.status === 200) {
+              k(req.responseText)();
+            }
+          };
+          req.open('GET', uri, true);
+          for (var i in headers) {
+            req.setRequestHeader(headers[i].value0, headers[i].value1);
+          }
+          req.send();
+        };
+      };
+    };
+  }
+  """ :: forall eff
+      . URI -- ^ URI to GET
+      -> HttpHeaders -- ^ HTTP headers to send
+      -> (String -> Eff (xhr :: XHR | eff) Unit) -- ^ Callback method to run
+      -> Eff (xhr :: XHR | eff) Unit
+
 -- | Send a HTTP POST
 foreign import post
   """
