@@ -32,7 +32,7 @@ import Debug.Trace
 import Debug.Foreign
 
 --------------------------------------------------------------------------------
--- Why the fuck don't we have this in Prelude?
+-- Why don't we have this in Prelude?
 length :: forall a. [a] -> Number
 length [] = 0
 length (x:xs) = 1 + length xs
